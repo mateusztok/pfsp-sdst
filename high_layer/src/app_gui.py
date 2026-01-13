@@ -88,10 +88,44 @@ class PFSPGui(ctk.CTk):
         p = filedialog.askopenfilename(initialdir="../../data")
         if p: self.file_var.set(p)
 
+    def _validate_algorithm_params(self):
+        """Sprawdza czy parametry wpisane w pola tekstowe są poprawne."""
+        algo_name = self.method_var.get()
+        schema = ALGO_SCHEMAS[algo_name]
+
+        for param in schema:
+            name, p_type, _, rules = param
+            if p_type == "fixed":
+                continue
+            
+            val_str = self.param_vars[name].get().strip()
+            
+            try:
+                if p_type == "int":
+                    val = int(val_str)
+                elif p_type == "float":
+                    val = float(val_str.replace(',', '.')) # obsługa przecinka
+
+                # Sprawdzenie zakresów
+                if "min" in rules and val < rules["min"]:
+                    return False, f"Parametr '{name}' nie może być mniejszy niż {rules['min']}."
+                if "max" in rules and val > rules["max"]:
+                    return False, f"Parametr '{name}' nie może być większy niż {rules['max']}."
+                
+            except ValueError:
+                return False, f"Parametr '{name}' musi być liczbą typu {p_type}."
+
+        return True, ""
+    
     def _run_solver(self):
         path = self.file_var.get()
         valid, err, n, m = validate_file_content(path)
         if not valid: messagebox.showerror("Błąd danych", err); return
+
+        valid_params, err_params = self._validate_algorithm_params()
+        if not valid_params:
+            messagebox.showerror("Błąd parametrów", err_params)
+            return
         
         algo = self.method_var.get(); warning, reasons = False, []
         if "NEH" in algo and n > 800: warning = True; reasons.append(f"- Faza NEH: Duża liczba zadań ({n}).")
@@ -125,11 +159,9 @@ class PFSPGui(ctk.CTk):
         except Exception as e: self.after(0, lambda: messagebox.showerror("Błąd", str(e)))
 
     def _parse_slot(self, line):
-        try:
-            p = {i.split('=')[0]: i.split('=')[1] for i in line.strip().split(';') if '=' in i}
-            s = {'m': int(p['machine']), 'j': int(p['job']), 's': float(p['start']), 'e': float(p['end']), 'setup': float(p['setup'])}
-            with self.lock: self.slots_by_iter[int(p.get('iter', 0))].append(s)
-        except: pass
+        p = {i.split('=')[0]: i.split('=')[1] for i in line.strip().split(';') if '=' in i}
+        s = {'m': int(p['machine']), 'j': int(p['job']), 's': float(p['start']), 'e': float(p['end']), 'setup': float(p['setup'])}
+        with self.lock: self.slots_by_iter[int(p.get('iter', 0))].append(s)
 
     def _render_gantt(self):
         with self.lock:
