@@ -2,45 +2,83 @@
 import os
 
 def validate_file_content(path):
-    """Rygorystyczne sprawdzanie poprawności formatu pliku."""
-    if not os.path.isfile(path): return False, "Błąd ścieżki.", 0, 0
+    """
+    Rygorystyczna walidacja struktury pliku PFSP-SDST.
+    Sprawdza wymiary macierzy proc_time (n x m) oraz setup_time (n x n dla każdej maszyny).
+    """
+    if not os.path.isfile(path): 
+        return False, "Błąd: Podana ścieżka nie jest plikiem.", 0, 0
+        
     try:
         n, m = 0, 0
-        has_proc_time = False
-        has_setup_time = False
-        machine_headers = set()
-
+        lines = []
         with open(path, 'r') as f:
-            lines = f.readlines()
+            lines = [line.strip() for line in f.readlines()]
+
+        # 1. Szukanie n (jobs) i m (machines)
+        for line in lines:
+            if line.startswith('jobs'):
+                if '=' not in line: return False, "Błąd formatu: Brak '=' w definicji 'jobs'.", 0, 0
+                n = int(line.split('=')[1].strip())
+            elif line.startswith('machines'):
+                if '=' not in line: return False, "Błąd formatu: Brak '=' w definicji 'machines'.", 0, 0
+                m = int(line.split('=')[1].strip())
+        
+        if n <= 0 or m <= 0:
+            return False, "Błąd: Liczba zadań i maszyn musi być większa niż 0.", 0, 0
+
+        # Zmienne pomocnicze do śledzenia sekcji
+        current_section = None
+        proc_time_rows = 0
+        setup_matrices = {i: 0 for i in range(1, m + 1)}
+        current_machine = None
 
         for line in lines:
-            clean_line = line.strip()
-            if not clean_line: continue
-
-            if clean_line.startswith('jobs'):
-                if '=' not in clean_line: return False, "Błąd: Brak '=' w 'jobs'.", 0, 0
-                n = int(clean_line.split('=')[1].strip())
-            elif clean_line.startswith('machines'):
-                if '=' not in clean_line: return False, "Błąd: Brak '=' w 'machines'.", 0, 0
-                m = int(clean_line.split('=')[1].strip())
-            elif clean_line.startswith('proc_time'):
-                has_proc_time = '=' in clean_line
-            elif clean_line.startswith('setup_time'):
-                has_setup_time = '=' in clean_line
-            elif clean_line.startswith('# machine'):
+            if not line or line.startswith('#') and not line.startswith('# machine'):
+                continue
+            
+            # Detekcja startu sekcji
+            if line.startswith('proc_time'):
+                current_section = 'proc_time'
+                continue
+            elif line.startswith('setup_time'):
+                current_section = 'setup_time'
+                continue
+            elif line.startswith('# machine'):
                 try:
-                    m_idx = int(clean_line.replace('# machine', '').strip())
-                    machine_headers.add(m_idx)
-                except: pass
+                    current_machine = int(line.replace('# machine', '').strip())
+                    current_section = 'machine_data'
+                    continue
+                except:
+                    return False, f"Błąd formatu: Niepoprawny numer maszyny w '{line}'.", 0, 0
 
-        if n <= 0 or m <= 0: return False, "Błąd: jobs/machines muszą być > 0.", 0, 0
-        if not has_proc_time: return False, "Błąd: Brak sekcji 'proc_time ='.", 0, 0
-        if not has_setup_time: return False, "Błąd: Brak sekcji 'setup_time ='.", 0, 0
-        
-        for i in range(1, m + 1):
-            if i not in machine_headers:
-                return False, f"Błąd: Brak macierzy dla maszyny {i}.", 0, 0
+            # Walidacja danych w sekcjach
+            values = line.split()
+            if not values: continue
+
+            if current_section == 'proc_time':
+                if len(values) != m:
+                    return False, f"Błąd w proc_time: Wiersz {proc_time_rows + 1} ma {len(values)} kolumn, a powinien mieć {m}.", 0, 0
+                proc_time_rows += 1
+            
+            elif current_section == 'machine_data':
+                if current_machine not in setup_matrices:
+                    return False, f"Błąd: Znaleziono dane dla maszyny {current_machine}, która nie została zadeklarowana.", 0, 0
+                if len(values) != n:
+                    return False, f"Błąd w macierzy maszyny {current_machine}: Wiersz {setup_matrices[current_machine] + 1} ma {len(values)} kolumn, a powinien mieć {n}.", 0, 0
+                setup_matrices[current_machine] += 1
+
+        # 2. Weryfikacja końcowa kompletności danych
+        if proc_time_rows != n:
+            return False, f"Błąd: Sekcja proc_time zawiera {proc_time_rows} wierszy, a powinna zawierać {n}.", 0, 0
+
+        for m_id, rows in setup_matrices.items():
+            if rows == 0:
+                return False, f"Błąd: Macierz przezbrojeń dla maszyny {m_id} jest pusta.", 0, 0
+            if rows != n:
+                return False, f"Błąd: Macierz maszyny {m_id} zawiera {rows} wierszy, a powinna zawierać {n}.", 0, 0
 
         return True, "", n, m
+
     except Exception as e:
-        return False, f"Błąd odczytu: {str(e)}", 0, 0
+        return False, f"Błąd krytyczny podczas odczytu: {str(e)}", 0, 0
