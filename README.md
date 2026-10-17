@@ -18,7 +18,7 @@ The system is divided into two decoupled layers communicating via standard outpu
 * **Dynamic GUI:** Real-time logging, live updating of the best sequence, and interactive Cmax tracking.
 * **Gantt Chart Visualization:** Automated, color-coded scheduling visualization including setup times, job IDs, and machine timelines.
 * **Strict Data Validation:** Comprehensive dataset parser that catches matrix dimension mismatches and syntax errors before the solver runs.
-* **Configurable Parameters:** Easily adjust SA parameters (Iterations, Initial Temperature, Cooling Factor) directly from the UI.
+* **Configurable Parameters:** Easily adjust SA parameters (Iterations, Initial Temperature, Cooling Factor) directly from the UI..
 
 ## Tech Stack
 
